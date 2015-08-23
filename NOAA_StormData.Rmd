@@ -1,0 +1,170 @@
+---
+title: "Analysis of weather related impacts to population and economy"
+author: "Todd Sumrow"
+date: "August 16, 2015"
+output: html_document
+---
+
+##1. Synopsis##
+The National Oceanic and Atmospheric Administration(NOAA) maintains a database of storm events. The storm event database records the occurrence and impact of significant weather phenomena in the United States from January 1950 to April 2015. An analysis was performed against this data to determine which events are the most harmful to human populations and which have the greatest economic consequence.
+
+The results indicate that tornadoes are the most harmful to human populations while floods have the greatest economic consequence. 
+
+##2. Data Processing##
+
+The data used for this analysis comes in the form of a comma-separated-value file compressed via the bzip2 algorithm to reduce its size. The data set analyzed in this report was downloaded from the following url on **2015-08-16** at **6:12PM UTC**
+
+[https://d396qusza40orc.cloudfront.net/repdata-data-StormData.csv.bz2](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2)
+
+###2.1 Data Load###
+We begin the analysis by loading a set of libraries along with the NOAA data set. The data set has a total of thirty seven columns. Seven of these are related to answering the questions we've posed. The following seven columns are extracted from the dataset: EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP.
+
+```{r}
+# load the following libraries
+library (ggplot2)
+library (dplyr)
+
+
+# Check if the data file exists, if not, download the file.
+fileURL <- "http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+destFile <- "repdata-data-StormData.csv.bz2" 
+if (!file.exists(destFile)) {download.file(fileURL,destFile)}
+
+# Load the data into a data frame table
+data <- tbl_df(read.csv(destFile))
+
+# extract the columns to be used for the analysis
+data <- select(data, EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
+```
+
+Once the data load has completed, we validate that the resulting data set is as expected.
+```{r}
+glimpse(data)
+```
+
+###2.2 Data Manipulation###
+The NOAA database records the total number of fatalities and injuries per event individually. To answer the question which events had the greatest impact on human populations these two columns are added together and the resulting sum is used a measure of impact. One might argue that a fatality should carry more weight than an injury but for the purpose of this analysis we have given them an equal weighting.
+
+```{r}
+data <- data %>% mutate(totalHarm = FATALITIES + INJURIES)
+```
+
+
+The NOAA database dataset records the property damage and crop damage for each event. Each of these is stored across two columns, one with the numeric value and another with an character representing the exponent. 
+```{r}
+levels(data$PROPDMGEXP)
+levels(data$CROPDMGEXP)
+```
+
+To effectively compare the damage caused for each event we require a numeric value. We assign a value for the character represented in property and crop exponent columns as shown below. 
+
+Character                     Description         Represents
+-------------------------     -----------         --------------
+B                             Billions            1,000,000,000
+8                             Hundred Million     100,000,000
+7                             Ten Million         10,000,000
+M, m, 6                       Millions            1,000,000
+5                             Hundred Thousand    100,000
+4                             Ten Thousand        10,000
+K,3                           Thousands           1,000
+H,h,2                         Hundreds            100
+1                             Ten                 10
+-, ?, +, 0, ""                Other               0
+
+```{r}
+# Assign a numeric value to each character in PROPDMGEXP and store the result in propertyExp
+data$propertyExp[data$PROPDMGEXP == "B"] <- 1000000000
+data$propertyExp[data$PROPDMGEXP == "8"] <- 100000000
+data$propertyExp[data$PROPDMGEXP == "7"] <- 10000000
+data$propertyExp[data$PROPDMGEXP == "6"] <- 1000000
+data$propertyExp[data$PROPDMGEXP == "m"] <- 1000000
+data$propertyExp[data$PROPDMGEXP == "M"] <- 1000000
+data$propertyExp[data$PROPDMGEXP == "5"] <- 100000
+data$propertyExp[data$PROPDMGEXP == "4"] <- 10000
+data$propertyExp[data$PROPDMGEXP == "K"] <- 1000
+data$propertyExp[data$PROPDMGEXP == "3"] <- 1000
+data$propertyExp[data$PROPDMGEXP == "H"] <- 100
+data$propertyExp[data$PROPDMGEXP == "h"] <- 100
+data$propertyExp[data$PROPDMGEXP == "2"] <- 100
+data$propertyExp[data$PROPDMGEXP == "1"] <- 10
+data$propertyExp[data$PROPDMGEXP == "-"] <- 0
+data$propertyExp[data$PROPDMGEXP == "?"] <- 0
+data$propertyExp[data$PROPDMGEXP == "+"] <- 0
+data$propertyExp[data$PROPDMGEXP == "0"] <- 0
+data$propertyExp[data$PROPDMGEXP == ""] <- 0
+
+# Assign a numeric value to each character in CROPDMGEXP and store the result in cropExp
+data$cropExp[data$CROPDMGEXP == "B"] <- 1000000000
+data$cropExp[data$CROPDMGEXP == "m"] <- 1000000
+data$cropExp[data$CROPDMGEXP == "M"] <- 1000000
+data$cropExp[data$CROPDMGEXP == "k"] <- 1000
+data$cropExp[data$CROPDMGEXP == "K"] <- 1000
+data$cropExp[data$CROPDMGEXP == "H"] <- 100
+data$cropExp[data$CROPDMGEXP == "h"] <- 100
+data$cropExp[data$CROPDMGEXP == "2"] <- 100
+data$cropExp[data$CROPDMGEXP == "0"] <- 0
+data$cropExp[data$CROPDMGEXP == "?"] <- 0
+data$cropExp[data$CROPDMGEXP == ""] <- 0
+```
+
+We multiple the value we've assigned to the each exponent column by the value in the associated damage column and add the results to determine the total damage caused per event.
+
+* (**Property Damage** X **Property Exponent**) + (**Crop Damage** X **Crop Exponent**) = **Total Damage** *
+
+```{r}          
+# store the sum of the property and crop damage in totalDamage          
+data <- mutate(data, totalDamage = (PROPDMG * propertyExp) + (CROPDMG * cropExp))
+
+```
+
+
+##3. Results##
+
+###3.1 Events most harmful to human populations###
+To address the question which event types have the most significant human impact we group the resulting data set by event type, sort by the sum of fatalities and injuries, and view the top 10 event types.
+```{r}
+
+dataByHarm <- data %>% select(EVTYPE, totalHarm) %>%
+                       group_by (EVTYPE) %>%
+                       summarize(sumHarm=sum(totalHarm)) %>%
+                       arrange(desc(sumHarm)) %>%
+                       top_n(10)
+dataByHarm
+
+
+g1 <- ggplot(dataByHarm, aes(EVTYPE, y=sumHarm,)) + 
+     geom_bar(colour="black", fill="#DD0000", width=.8,stat="identity") +
+     guides(fill=FALSE) + 
+     xlab("Event Type") + ylab("Total Health Impact (fatalities + injuries)") + 
+     ggtitle("Top 10 events by population health impact") +
+     theme(axis.title = element_text(face="bold", colour="#000000", size=12),
+     axis.text.x  = element_text(angle=45, vjust=1, hjust=1, size=12),
+     title = element_text(face="bold", size=14))
+
+plot(g1)
+```
+
+###3.2 Events with greatest economic consequence###
+Next, we address the question of which event type has the most significant economic impact.  To answer this, we group the resulting data set by event type, sort by the sum of crop and property damage, and view the top 10 event types.
+```{r}
+dataByDamage <- data %>% select(totalDamage, EVTYPE) %>%
+                         group_by (EVTYPE) %>%
+                         summarize(sumDamage=sum(totalDamage)) %>%
+                         arrange(desc(sumDamage)) %>%
+                         top_n(10)
+dataByDamage
+
+g2 <- ggplot(dataByDamage, aes(EVTYPE, y=sumDamage,)) + 
+     geom_bar(colour="black", fill="#DD0000", width=.8,stat="identity") +
+     guides(fill=FALSE) + 
+     xlab("Event Type") + ylab("Total Dollars") + 
+     ggtitle("Top 10 events by economic damage in dollars") +
+     theme(axis.title = element_text(face="bold", colour="#000000", size=12),
+     axis.text.x  = element_text(angle=45, vjust=1, hjust=1, size=12),
+     title = element_text(face="bold", size=14))
+
+plot(g2)
+```
+
+###3.3 Conclusion###
+The result above indicate that across the United States tornadoes are by far the most harmful to human population health while floods have the greatest economic impact.
