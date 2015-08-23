@@ -1,6 +1,6 @@
 ---
 title: "Analysis of weather related impacts to population and economy"
-author: "Todd Sumrow"
+author: "T. Sumrow"
 date: "August 16, 2015"
 output: html_document
 ---
